@@ -107,46 +107,53 @@ class SoundChange:
 
         return compile(context)
 
-    def filter_context_matches(self, context_matches: list[Match], nontext_matches: list[tuple[Match, str]]) -> list[Match]:
-        valid_context_matches  : list[Match] = []
-        context_input_positions: list[int]   = []
-        nontext_input_positions: list[int]   = []
-
-        for context_match in context_matches:
-            for underscore_position in self.context_undescore_positions:
-                context_input_positions.append(underscore_position + context_match.span()[0])
-                valid_context_matches.append(context_match)
-
-        for nontext_match in nontext_matches:
-            this_pattern_str = nontext_match[1]
-            pattern_index = -1
-            for index, nontext_pattern in enumerate(self.nontext_patterns):
-                if this_pattern_str == nontext_pattern.pattern:
-                    pattern_index = index
-                    break
-
-            nontext_input_positions += [
-                underscore_position + nontext_match[0].span()[0]
-                for underscore_position in self.nontext_underscore_positions[pattern_index] # which patten?
-            ]
-
-        valid_input_positions = list(set(context_input_positions).difference(set(nontext_input_positions)))
-        return list(set([valid_context_matches[context_input_positions.index(index)] for index in valid_input_positions]))
-
-    def compare_word(self, word: str) -> list[Match]:
+    def apply(self, word: str) -> str:
         context_matches = [
             context_match for context_match in finditer(self.context_pattern, f"#{word}#")
         ]
-        nontext_matches = reduce(iconcat, [[
-                (nontext_match, nontext_pattern.pattern) for nontext_match in finditer(nontext_pattern, f"#{word}#")
-            ] for nontext_pattern in self.nontext_patterns
-        ], [])
         
-        return self.filter_context_matches(context_matches, nontext_matches)
+        context_positions = [[
+            context_match.start() + underscore_position
+            for underscore_position in self.context_undescore_positions]
+            for context_match in context_matches
+        ]
+        
+        context_positions = reduce(iconcat, context_positions, [])
 
-class ReplacementSC(SoundChange):
-    def __init__(self, catagories: Catagories, input_val: str, output_val: str, context: str, nontexts: list[str] = []) -> None:
-        super().__init__(catagories, input_val, output_val, context, nontexts)
+        nontext_matches = [[
+            (nontext_match, nontext_pattern)
+            for nontext_match in finditer(nontext_pattern, f"#{word}#")]
+            for nontext_pattern in self.nontext_patterns
+        ]
+
+        nontext_matches = reduce(iconcat, nontext_matches, [])
+
+        nontext_positions = []
+
+        for nontext_match in nontext_matches:
+            position = -1
+            for index, nontext_pattern in enumerate(self.nontext_patterns):
+                if nontext_match[1] == nontext_pattern:
+                    position = index
+                    break
+            nontext_positions.append([
+                nontext_match[0].start() + underscore_position
+                for underscore_position in self.nontext_underscore_positions[position]
+            ])
+
+        nontext_positions = reduce(iconcat, nontext_positions, [])
+
+        valid_positions = list(set(context_positions).difference(set(nontext_positions)))
+        
+        #print("context positions:", context_positions)
+        #print("nontext positions:", nontext_positions)
+        #print("valid positions:", valid_positions)
+
+        char_list = list(word)
+        for valid_position in valid_positions:
+            char_list[valid_position - 1] = self.output_val
+
+        return "".join(char_list)
 
 class SoundChanges:
     pass
@@ -164,7 +171,7 @@ def main():
         [input("sound change nontext: ")]
     )
     ws = input("word(s)").split(" ")
-    ms = [r.compare_word(w) for w in ws]
+    ms = [r.apply(w) for w in ws]
 
     for i in range(len(ws)):
         print(ws[i] + " " + str(ms[i]))
