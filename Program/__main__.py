@@ -107,6 +107,28 @@ class SoundChange:
 
         return compile(context)
 
+    def replace_underscore_by_indexes(self, string: str, indexes: list[int], length: int):
+         nindexes  = reduce(iconcat, [[i for i in range(index + 1, index + length)] for index in indexes], [])
+         newstring = ""
+         for index, character in enumerate(list(string)):
+             if index in indexes:
+                 newstring += "_"
+                 continue
+             if index in nindexes:
+                 continue
+             else:
+                 newstring += character
+         return newstring
+   
+    def insert_underscore_by_indexes(self, string: str, indexes: list[int]) -> str:
+        newstring = ""
+        for index, character in enumerate(list(string)):
+            if index in indexes:
+                newstring += "_" + character
+                continue
+            newstring += character
+        return newstring
+
     def apply(self, word: str) -> str:
         context_matches = [
             context_match for context_match in finditer(self.context_pattern, f"#{word}#")
@@ -144,16 +166,17 @@ class SoundChange:
         nontext_positions = reduce(iconcat, nontext_positions, [])
 
         valid_positions = list(set(context_positions).difference(set(nontext_positions)))
-        
+        valid_positions = [position - 1 for position in valid_positions] 
         #print("context positions:", context_positions)
         #print("nontext positions:", nontext_positions)
         #print("valid positions:", valid_positions)
 
-        char_list = list(word)
-        for valid_position in valid_positions:
-            char_list[valid_position - 1] = self.output_val
+        if len(self.input_val) == 0:
+            word = self.insert_underscore_by_indexes(word, valid_positions)
+        else:
+            word = self.replace_underscore_by_indexes(word, valid_positions, len(self.input_val))
 
-        return "".join(char_list)
+        return word.replace("_", self.output_val)
 
 class SoundChanges:
     pass
