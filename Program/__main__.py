@@ -131,6 +131,8 @@ class SoundChange:
                 newstring += "_" + character
                 continue
             newstring += character
+        if len(string) in indexes:
+            newstring += "_"
         return newstring
 
     # obtains the positions of contexts that match the pattern but not which also match any nontexts
