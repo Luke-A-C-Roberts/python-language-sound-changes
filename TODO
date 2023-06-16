@@ -1,1 +1,3 @@
 DONE: fix inserts at the end of the words eg. /j/kt_ applied to akt -> akt at the moment but should be aktj
+
+add variable length and type input matches to replace

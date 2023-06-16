@@ -1,12 +1,13 @@
 from re        import Match, Pattern, fullmatch, compile, finditer
 from functools import reduce
 from operator  import iconcat
+from itertools import filterfalse
 
 # a catagory holds characters together nealy, represented by a capital letter
 class Catagory:
     def __init__(self, input_str: str) -> None:
         if fullmatch("[A-Z]=.+", input_str) == None:
-            raise ValueError("must be in the form <Capital Letter>=<list of characters>")
+            raise ValueError("must be in the form <capital letter>=<list of characters>")
         self.symbol = input_str[0]
         self.characters = input_str[2:]
 
@@ -46,16 +47,16 @@ class SoundChange:
         self.nontexts   = nontexts
         self.metathesize= False
 
-        self.context_undescore_positions = [
-            index for index, character in enumerate(context) if character == "_"
-        ]
-        self.nontext_underscore_positions = [[
-                index for index, character in enumerate(nontext) if character == "_"
-            ] for nontext in nontexts
-        ]
+        self.input_pattern = self.compile_context_pattern(input_val, catagories)
 
-        self.context_pattern  = self.compile_context_pattern(context, catagories)
-        self.nontext_patterns = [self.compile_context_pattern(nontext, catagories) for nontext in nontexts]
+        self.context_pattern = self.compile_context_pattern(
+            self.substitute_into_context(context, input_val), catagories
+        )
+        
+        self.nontext_patterns = [
+            self.compile_context_pattern(self.substitute_into_context(nontext, input_val), catagories)
+            for nontext in nontexts
+        ]
 
     # used to substitute the input into the context so that it can find matches
     def substitute_into_context(self, context: str, value: str) -> str:
@@ -84,11 +85,11 @@ class SoundChange:
     def remove_higher_level_brackets(self, context: str) -> str:
         completed = ""
         current_level = 0
-        for character in list(context):
+        for character in list(context): 
             if character == "[": current_level += 1
-            if character == "]": current_level -= 1
             if not(character in "[]" and current_level > 1):
                 completed += character
+            if character == "]": current_level -= 1
         return completed
 
     # squares like SCA²
@@ -100,93 +101,109 @@ class SoundChange:
 
     # compiles the pattern so it can be reused
     def compile_context_pattern(self, context: str, catagories: Catagories) -> Pattern: 
-        context = self.substitute_into_context(context, self.input_val) # _ -> input_val
         context = self.substitute_brackets(context)                     # (X) -> [X]?
         context = self.substitute_catagories(context, catagories)       # X -> [xyz]
         context = self.substitute_ellipses(context)                     # ... -> .+
         context = self.remove_higher_level_brackets(context)            # [#[xyz]] -> [#xyz]
         context = self.replace_squares(context)                         # x² -> x{2}
-
+        print(context)
         return compile(context)
 
-    # replaces all valid context matches with "_" which is then replaced with self.output
-    def replace_underscore_by_indexes(self, string: str, indexes: list[int], length: int):
-         nindexes  = reduce(iconcat, [[i for i in range(index + 1, index + length)] for index in indexes], [])
-         newstring = ""
-         for index, character in enumerate(list(string)):
-             if index in indexes:
-                 newstring += "_"
-                 continue
-             if index in nindexes:
-                 continue
-             else:
-                 newstring += character
-         return newstring
-   
-    # when input is blank, inserts "_" which is replaced by self.output
-    def insert_underscore_by_indexes(self, string: str, indexes: list[int]) -> str:
-        newstring = ""
-        for index, character in enumerate(list(string)):
-            if index in indexes:
-                newstring += "_" + character
-                continue
-            newstring += character
-        if len(string) in indexes:
-            newstring += "_"
-        return newstring
+    # used to find if an input match is inside of a context match. used to select which contexts to SC
+    def is_in_context(self, input_match: Match, context_match: Match) -> bool:
+        return context_match.start() <= input_match.start() and input_match.end() <= context_match.end()
+
+    def generate_output(self, input_match_string: str) -> str:
+        if self.metathesize:
+            raise NotImplementedError("metathesis is not implemented")
+        return self.output_val
 
     # obtains the positions of contexts that match the pattern but not which also match any nontexts
-    def get_valid_positions(self, word: str) -> list[int]:
+    def obtain_input_matches(self, word: str) -> list[Match]:
+
+        input_matches = [ # finds all of the inputs presesnt in the word
+            input_match for input_match in finditer(self.input_pattern, word)
+        ]
+
         context_matches = [ # finds all of the contexts for the sound change
-            context_match for context_match in finditer(self.context_pattern, f"#{word}#")
+            context_match for context_match in finditer(self.context_pattern, word)
         ]
-        
-        context_positions = [[ # finds all of the positions that are related to contexts
-            context_match.start() + underscore_position
-            for underscore_position in self.context_undescore_positions]
-            for context_match in context_matches
-        ]
-        context_positions = reduce(iconcat, context_positions, [])
 
         nontext_matches = [[ # finds all of the nontexts (exceptions to contexts) for the sound change
-            (nontext_match, nontext_pattern)
-            for nontext_match in finditer(nontext_pattern, f"#{word}#")]
+            nontext_match for nontext_match in finditer(nontext_pattern, word)]
             for nontext_pattern in self.nontext_patterns
         ]
         nontext_matches = reduce(iconcat, nontext_matches, [])
 
-        nontext_positions = [] # finds all of the positions that are related to nontexts
-        for nontext_match in nontext_matches:
-            position = -1
-            for index, nontext_pattern in enumerate(self.nontext_patterns):
-                if nontext_match[1] == nontext_pattern:
-                    position = index
-                    break
-            nontext_positions.append([
-                nontext_match[0].start() + underscore_position
-                for underscore_position in self.nontext_underscore_positions[position]
-            ])
-        nontext_positions = reduce(iconcat, nontext_positions, [])
+        is_in_context_lmd = lambda input_match: any( # lambda for filtering which input matches are inside context matches
+            self.is_in_context(input_match, context_match) for context_match in context_matches
+        )
+        input_matches = [context for context in filter(is_in_context_lmd, input_matches)] # filter those that match
+
+        is_in_nontext_lmd = lambda input_match: any( # similar lamda for nontexts
+            self.is_in_context(input_match, nontext_match) for nontext_match in nontext_matches
+        )
+        input_matches = [context for context in filterfalse(is_in_nontext_lmd, input_matches)] # filter those that do not match
+
+        print(input_matches)
         
-        # filters out context positions that are also nontexts
-        valid_positions = list(set(context_positions).difference(set(nontext_positions)))
-        valid_positions = [position - 1 for position in valid_positions] 
+        return input_matches
+
+    def apply_to(self, word: str) -> str:
+        word = f"#{word}#"
+
+        input_matches = self.obtain_input_matches(word)
+
+        if input_matches == []:
+            return word[1:-1]
+
+        match_positions = [[i for i in range(this_match.start(), this_match.end())] for this_match in input_matches]
+        match_positions = set(reduce(iconcat, match_positions, []))
+        literal_positions = list(set(range(len(word))).difference(match_positions))
+        substitute_positions = [this_match.start() for this_match in input_matches]
+
+        new_word = ""
+        for position, character in enumerate(word):
+            if position in literal_positions:
+                new_word += character
+                continue
+            if not position in substitute_positions:
+                continue
+            this_match = [input_match for input_match in input_matches if input_match.start() == position][0]
+            new_word += self.generate_output(this_match.group(0))
+
+        return new_word[1:-1]
+
+def notation_to_SC(catagories: Catagories, notation: str) -> SoundChange:
+   sections = notation.split("/")
+   if len(sections) < 3:
+       raise ValueError("notation must be in the form <input>/<output>/<context>[/<nontexts>]")
+   
+   if len(sections) == 3:
+       return SoundChange(catagories, sections[0], sections[1], sections[2], [], False)
+
+   return SoundChange(catagories, sections[0], sections[1], sections[2], sections[3:], False)
+
+def test_sound_change(notation: str, catagories: Catagories, test_words: str | list[str], output_words: str | list[str]) -> None:
+    SC = notation_to_SC(catagories, notation)
+
+    if type(test_words) == type(str):
+        test_words = [test_words]
+
+    if type(output_words) == type(str):
+        output_words = [output_words]
+
+    if len(test_words) != len(output_words):
+        raise ValueError("test and output word lists must be the same length")
+
+    for index, (test_word, output_word) in enumerate(zip(test_words, output_words)):
+        new_word = SC.apply_to(test_word)
         
-        return valid_positions
-
-    # applies the sound change
-    def apply(self, word: str) -> str:
-        valid_positions = self.get_valid_positions(word)
-
-        if self.metathesize:
-            raise NotImplementedError("metathesis not implemented") # metathesis code
-
-        if len(self.input_val) == 0:
-            word = self.insert_underscore_by_indexes(word, valid_positions)
-        else:
-            word = self.replace_underscore_by_indexes(word, valid_positions, len(self.input_val))
-
-        return word.replace("_", self.output_val)
+        if new_word == output_word:
+            print(f"{index} \033[1;32mTest Successful\033[0m: {test_word} -> {notation} -> {new_word}")
+            continue
+        
+        print(f"{index} \033[1;31mTest Unsuccessful\033[0m: {test_word} -> {notation} -> {new_word}, expected {output_word}")
 
 # holds and applies sound changes
 class SoundChanges:
@@ -205,20 +222,14 @@ class InputWords:
     pass
 
 def main():
-    c = Catagories("V=aiueo\nC=ptkbdghmnŋslr")
-    r = SoundChange (
-        c,
-        input("expected input: "),
-        input("expected output: "),
-        input("sound change context: "),
-        [input("sound change nontext: ")],
-        False
+    catagories = Catagories("V=aiueo\nC=ptkbdghmnŋslr")
+    
+    test_sound_change(
+        "i/j/[V#]_V/_o",
+        catagories,
+        ["kaia", "iam", "kaio", "iom"],
+        ["kaja", "jam", "kaio", "iom"]
     )
-    ws = input("word(s)").split(" ")
-    ms = [r.apply(w) for w in ws]
-
-    for i in range(len(ws)):
-        print(ws[i] + " " + str(ms[i]))
 
 if __name__ == "__main__":
     main()
