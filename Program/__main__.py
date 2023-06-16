@@ -1,4 +1,4 @@
-from re        import Match, Pattern, fullmatch, compile, finditer
+from re        import Match, Pattern, fullmatch, compile, finditer, search
 from functools import reduce
 from operator  import iconcat
 from itertools import filterfalse
@@ -56,6 +56,11 @@ class SoundChange:
         self.nontext_patterns = [
             self.__compile_context_pattern(self.__substitute_into_context(nontext, input_val), catagories)
             for nontext in nontexts
+        ]
+
+        self.context_bodies = [
+            self.__compile_context_pattern(context_body, catagories)
+            for context_body in context.split("_")
         ]
 
     # used to substitute the input into the context so that it can find matches
@@ -133,9 +138,17 @@ class SoundChange:
     def __is_in_context(self, input_match: Match, context_match: Match) -> bool:
         return context_match.start() <= input_match.start() and input_match.end() <= context_match.end()
 
-    #filters the contexts which are both in contexts and out of nontexts
-    def __filter_valid_matches(self, input_matches: list[Match], context_matches: list[Match], nontext_matches: list[Match]) -> list[Match]:
-         # lambda for filtering which input matches are inside context matches
+    def __is_in_sub_context(self, input_match: Match, sub_context_span: tuple[int]) -> bool:
+        return sub_context_span[0] <= input_match.start() and input_match.end() <= sub_context_span[1] 
+    
+    # obtains the positions of contexts that match the pattern but not which also match any nontexts
+    def __obtain_valid_matches(self, word: str) -> list[Match]:
+
+        input_matches   = self.__obtain_input_matches(word)
+        context_matches = self.__obtain_context_matches(word)
+        nontext_matches = self.__obtain_nontext_matches(word)
+        
+        # lambda for filtering which input matches are inside context matches
         is_in_context_lmd = lambda input_match: any(
             self.__is_in_context(input_match, context_match) for context_match in context_matches
         )
@@ -144,36 +157,48 @@ class SoundChange:
             self.__is_in_context(input_match, nontext_match) for nontext_match in nontext_matches
         )
 
-        input_matches = [context for context in filter(is_in_context_lmd, input_matches)] # filter those that match
-        input_matches = [context for context in filterfalse(is_in_nontext_lmd, input_matches)] # filter those that do not match
+        input_matches = [context for context in filter(is_in_context_lmd, input_matches)] # filter those that match a context
+        input_matches = [context for context in filterfalse(is_in_nontext_lmd, input_matches)] # filter thoes that are not in a nontext
+
+        # filter out input matches that are also in a context body
+
+        all_sub_context_spans = []
+        for context_match in context_matches:
+            context_str = context_match.group(0)
+            start_pos = context_match.start()
+
+            sub_context_spans: list[tuple[int]] = []
+
+            for context_body_pattern in self.context_bodies:
+
+                context_body_match = search(context_body_pattern, context_str)
+                if not context_body_match: break
+                context_str = context_str[:context_body_match.end()]
+
+                sub_context_spans.append((start_pos, start_pos + context_body_match.end()))
+                start_pos += context_body_match.end()
+
+                input_match = search(self.input_pattern, context_str)
+                if not input_match: break
+                context_str = context_str[:input_match.end()]
+
+            all_sub_context_spans.append(sub_context_spans)
+
+        all_sub_context_spans = reduce(iconcat, all_sub_context_spans, [])
+            
+        is_in_sub_context_lmd = lambda input_match: any(
+            self.__is_in_sub_context(input_match, sub_context_span) for sub_context_span in all_sub_context_spans
+        )
+
+        input_matches = [context for context in filterfalse(is_in_sub_context_lmd, input_matches)]
 
         return input_matches
-
-    # obtains the positions of contexts that match the pattern but not which also match any nontexts
-    def __obtain_valid_matches(self, word: str) -> list[Match]:
-
-        input_matches   = self.__obtain_input_matches(word)
-        context_matches = self.__obtain_context_matches(word)
-        nontext_matches = self.__obtain_nontext_matches(word)
- 
-        if word == "#akto#":
-            print("i:" ,input_matches, "\nc: ", context_matches, "\nn:", nontext_matches)
-
-        valid_matches = self.__filter_valid_matches(input_matches, context_matches, nontext_matches)
-        
-        return valid_matches
 
     def apply_to(self, word: str) -> str:
 
         # add word endings and get the input matches
         word = f"#{word}#"
         valid_matches = self.__obtain_valid_matches(word)
-
-        if word == "#akto#":
-            print("f:", valid_matches)
-
-        if valid_matches == []:
-            return word[1:-1]
 
         match_positions = [[i for i in range(this_match.start(), this_match.end())] for this_match in valid_matches]
         match_positions = set(reduce(iconcat, match_positions, []))
@@ -182,15 +207,13 @@ class SoundChange:
 
         new_word = ""
         for position, character in enumerate(word):
-            if self.input_val == "" and position in literal_positions and position in substitute_positions:
-                this_match = [valid_match for valid_match in valid_matches if valid_match.start() == position][0]
-                new_word += self.__generate_output(this_match.group(0)) + character
-                continue
             if position in literal_positions:
                 new_word += character
                 continue
+
             if not position in substitute_positions:
                 continue
+
             this_match = [valid_match for valid_match in valid_matches if valid_match.start() == position][0]
             new_word += self.__generate_output(this_match.group(0))
 
@@ -293,6 +316,21 @@ def main():
             "/j/kt_/_#",
             ["akto", "akt"],
             ["aktjo", "akt"]
+        ),
+        SCTest(
+            "a/o/ah_",
+            ["aha"],
+            ["aho"]
+        ),
+        SCTest(
+            "C/h/C_",
+            ["akto"],
+            ["akho"]
+        ),
+        SCTest(
+            "h//V_V",
+            ["aha"],
+            ["aa"]
         )
     ], catagories)
 
