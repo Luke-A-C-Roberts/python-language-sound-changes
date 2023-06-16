@@ -58,6 +58,7 @@ class SoundChange:
             for nontext in nontexts
         ]
 
+        print(context.split("_"))
         self.context_bodies = [
             self.__compile_context_pattern(context_body, catagories)
             for context_body in context.split("_")
@@ -139,7 +140,7 @@ class SoundChange:
         return context_match.start() <= input_match.start() and input_match.end() <= context_match.end()
 
     def __is_in_sub_context(self, input_match: Match, sub_context_span: tuple[int]) -> bool:
-        return sub_context_span[0] <= input_match.start() and input_match.end() <= sub_context_span[1] 
+        return sub_context_span[0] <= input_match.start() and input_match.end() <= sub_context_span[1]
     
     # obtains the positions of contexts that match the pattern but not which also match any nontexts
     def __obtain_valid_matches(self, word: str) -> list[Match]:
@@ -170,13 +171,17 @@ class SoundChange:
             sub_context_spans: list[tuple[int]] = []
 
             for context_body_pattern in self.context_bodies:
+                print(f"'{context_body_pattern.pattern}'")
 
                 context_body_match = search(context_body_pattern, context_str)
+
                 if not context_body_match: break
                 context_str = context_str[:context_body_match.end()]
 
                 sub_context_spans.append((start_pos, start_pos + context_body_match.end()))
                 start_pos += context_body_match.end()
+
+                if self.input_pattern == "": continue
 
                 input_match = search(self.input_pattern, context_str)
                 if not input_match: break
@@ -184,13 +189,23 @@ class SoundChange:
 
             all_sub_context_spans.append(sub_context_spans)
 
-        all_sub_context_spans = reduce(iconcat, all_sub_context_spans, [])
-            
-        is_in_sub_context_lmd = lambda input_match: any(
-            self.__is_in_sub_context(input_match, sub_context_span) for sub_context_span in all_sub_context_spans
-        )
+        all_sub_context_spans = [
+            span for span in
+            filterfalse(lambda span: span[0] == span[1], reduce(iconcat, all_sub_context_spans, []))
+        ]
 
+        print("input matches:", [input_match.span() for input_match in input_matches])
+        print("sub context span:", all_sub_context_spans)
+
+        # lambda for seeing which input are inside a sub context
+        is_in_sub_context_lmd = lambda input_match: any(
+            self.__is_in_sub_context(input_match, sub_context_span)
+            for sub_context_span in all_sub_context_spans
+        )
+        # filters inputs which are not in sub contexts
         input_matches = [context for context in filterfalse(is_in_sub_context_lmd, input_matches)]
+
+        print("filtered input matches:", [input_match.span() for input_match in input_matches])
 
         return input_matches
 
@@ -303,35 +318,20 @@ def main():
     
     test_multipleSCs([
         SCTest(
-            "i/j/[V#]_V/_o",
-            ["kaia", "iam", "kaio", "iom"],
-            ["kaja", "jam", "kaio", "iom"]
-        ),
-        SCTest(
-            "mb/mm/V_V",
-            ["amba", "amb", "mba", "mb"],
-            ["amma", "amb", "mba", "mb"],
-        ),
-        SCTest(
             "/j/kt_/_#",
             ["akto", "akt"],
             ["aktjo", "akt"]
         ),
         SCTest(
-            "a/o/ah_",
-            ["aha"],
-            ["aho"]
-        ),
-        SCTest(
-            "C/h/C_",
+            "/j/_kt",
             ["akto"],
-            ["akho"]
+            ["ajkto"]
         ),
         SCTest(
-            "h//V_V",
-            ["aha"],
-            ["aa"]
-        )
+            "/j/k_t",
+            ["akto"],
+            ["akjto"]
+        ),
     ], catagories)
 
     #test_sound_change ()
