@@ -47,27 +47,27 @@ class SoundChange:
         self.nontexts   = nontexts
         self.metathesize= False
 
-        self.input_pattern = self.compile_context_pattern(input_val, catagories)
+        self.input_pattern = self.__compile_context_pattern(input_val, catagories)
 
-        self.context_pattern = self.compile_context_pattern(
-            self.substitute_into_context(context, input_val), catagories
+        self.context_pattern = self.__compile_context_pattern(
+            self.__substitute_into_context(context, input_val), catagories
         )
         
         self.nontext_patterns = [
-            self.compile_context_pattern(self.substitute_into_context(nontext, input_val), catagories)
+            self.__compile_context_pattern(self.__substitute_into_context(nontext, input_val), catagories)
             for nontext in nontexts
         ]
 
     # used to substitute the input into the context so that it can find matches
-    def substitute_into_context(self, context: str, value: str) -> str:
+    def __substitute_into_context(self, context: str, value: str) -> str:
          return context.replace("_", value) if "_" in context else context 
 
     # curlies are used for optionals which in regex is []?
-    def substitute_brackets(self, context: str) -> str:
+    def __substitute_brackets(self, context: str) -> str:
         return context.replace("(", "[").replace(")", "]?")
 
     # substitutes the catagory strings into the regex
-    def substitute_catagories(self, context: str, catagories: Catagories) -> str:
+    def __substitute_catagories(self, context: str, catagories: Catagories) -> str:
         completed = ""
         for character in list(context):
             catagory = catagories[character]
@@ -78,11 +78,11 @@ class SoundChange:
         return completed
 
     # ellipses are used for any number of character
-    def substitute_ellipses(self, context: str) -> str:
+    def __substitute_ellipses(self, context: str) -> str:
         return context.replace("...", ".+")
 
     # embeded brackets may cause issues for regex, so inner brackets are removed
-    def remove_higher_level_brackets(self, context: str) -> str:
+    def __remove_higher_level_brackets(self, context: str) -> str:
         completed = ""
         current_level = 0
         for character in list(context): 
@@ -93,84 +93,106 @@ class SoundChange:
         return completed
 
     # squares like SCA²
-    def replace_squares(self, context: str) -> str:
+    def __replace_squares(self, context: str) -> str:
         completed = ""
         for character in list(context):
             completed += "{2}" if character == "²" else character
         return completed
 
     # compiles the pattern so it can be reused
-    def compile_context_pattern(self, context: str, catagories: Catagories) -> Pattern: 
-        context = self.substitute_brackets(context)                     # (X) -> [X]?
-        context = self.substitute_catagories(context, catagories)       # X -> [xyz]
-        context = self.substitute_ellipses(context)                     # ... -> .+
-        context = self.remove_higher_level_brackets(context)            # [#[xyz]] -> [#xyz]
-        context = self.replace_squares(context)                         # x² -> x{2}
-        print(context)
+    def __compile_context_pattern(self, context: str, catagories: Catagories) -> Pattern: 
+        context = self.__substitute_brackets(context)                     # (X) -> [X]?
+        context = self.__substitute_catagories(context, catagories)       # X -> [xyz]
+        context = self.__substitute_ellipses(context)                     # ... -> .+
+        context = self.__remove_higher_level_brackets(context)            # [#[xyz]] -> [#xyz]
+        context = self.__replace_squares(context)                         # x² -> x{2}
         return compile(context)
 
-    # used to find if an input match is inside of a context match. used to select which contexts to SC
-    def is_in_context(self, input_match: Match, context_match: Match) -> bool:
-        return context_match.start() <= input_match.start() and input_match.end() <= context_match.end()
-
-    def generate_output(self, input_match_string: str) -> str:
+    def __generate_output(self, input_match_string: str) -> str:
         if self.metathesize:
             raise NotImplementedError("metathesis is not implemented")
         return self.output_val
 
-    # obtains the positions of contexts that match the pattern but not which also match any nontexts
-    def obtain_input_matches(self, word: str) -> list[Match]:
+    # finds all of the inputs presesnt in the word
+    def __obtain_input_matches(self, word: str) -> list[Match]:
+        return [input_match for input_match in finditer(self.input_pattern, word)]
 
-        input_matches = [ # finds all of the inputs presesnt in the word
-            input_match for input_match in finditer(self.input_pattern, word)
-        ]
+    # finds all of the contexts for the sound change
+    def __obtain_context_matches(self, word: str) -> list[Match]:
+        return [context_match for context_match in finditer(self.context_pattern, word)]
 
-        context_matches = [ # finds all of the contexts for the sound change
-            context_match for context_match in finditer(self.context_pattern, word)
-        ]
-
-        nontext_matches = [[ # finds all of the nontexts (exceptions to contexts) for the sound change
+    # finds all of the nontexts (exceptions to contexts) for the sound change
+    def __obtain_nontext_matches(self, word: str) -> list[Match]:
+        nontext_matches = [[
             nontext_match for nontext_match in finditer(nontext_pattern, word)]
             for nontext_pattern in self.nontext_patterns
         ]
-        nontext_matches = reduce(iconcat, nontext_matches, [])
+        return reduce(iconcat, nontext_matches, [])
 
-        is_in_context_lmd = lambda input_match: any( # lambda for filtering which input matches are inside context matches
-            self.is_in_context(input_match, context_match) for context_match in context_matches
+    # used to find if an input match is inside of a context match. used to select which contexts to SC
+    def __is_in_context(self, input_match: Match, context_match: Match) -> bool:
+        return context_match.start() <= input_match.start() and input_match.end() <= context_match.end()
+
+    #filters the contexts which are both in contexts and out of nontexts
+    def __filter_valid_matches(self, input_matches: list[Match], context_matches: list[Match], nontext_matches: list[Match]) -> list[Match]:
+         # lambda for filtering which input matches are inside context matches
+        is_in_context_lmd = lambda input_match: any(
+            self.__is_in_context(input_match, context_match) for context_match in context_matches
         )
+        # similar lamda for nontexts
+        is_in_nontext_lmd = lambda input_match: any(
+            self.__is_in_context(input_match, nontext_match) for nontext_match in nontext_matches
+        )
+
         input_matches = [context for context in filter(is_in_context_lmd, input_matches)] # filter those that match
-
-        is_in_nontext_lmd = lambda input_match: any( # similar lamda for nontexts
-            self.is_in_context(input_match, nontext_match) for nontext_match in nontext_matches
-        )
         input_matches = [context for context in filterfalse(is_in_nontext_lmd, input_matches)] # filter those that do not match
 
-        print(input_matches)
-        
         return input_matches
 
+    # obtains the positions of contexts that match the pattern but not which also match any nontexts
+    def __obtain_valid_matches(self, word: str) -> list[Match]:
+
+        input_matches   = self.__obtain_input_matches(word)
+        context_matches = self.__obtain_context_matches(word)
+        nontext_matches = self.__obtain_nontext_matches(word)
+ 
+        if word == "#akto#":
+            print("i:" ,input_matches, "\nc: ", context_matches, "\nn:", nontext_matches)
+
+        valid_matches = self.__filter_valid_matches(input_matches, context_matches, nontext_matches)
+        
+        return valid_matches
+
     def apply_to(self, word: str) -> str:
+
+        # add word endings and get the input matches
         word = f"#{word}#"
+        valid_matches = self.__obtain_valid_matches(word)
 
-        input_matches = self.obtain_input_matches(word)
+        if word == "#akto#":
+            print("f:", valid_matches)
 
-        if input_matches == []:
+        if valid_matches == []:
             return word[1:-1]
 
-        match_positions = [[i for i in range(this_match.start(), this_match.end())] for this_match in input_matches]
+        match_positions = [[i for i in range(this_match.start(), this_match.end())] for this_match in valid_matches]
         match_positions = set(reduce(iconcat, match_positions, []))
         literal_positions = list(set(range(len(word))).difference(match_positions))
-        substitute_positions = [this_match.start() for this_match in input_matches]
+        substitute_positions = [this_match.start() for this_match in valid_matches]
 
         new_word = ""
         for position, character in enumerate(word):
+            if self.input_val == "" and position in literal_positions and position in substitute_positions:
+                this_match = [valid_match for valid_match in valid_matches if valid_match.start() == position][0]
+                new_word += self.__generate_output(this_match.group(0)) + character
+                continue
             if position in literal_positions:
                 new_word += character
                 continue
             if not position in substitute_positions:
                 continue
-            this_match = [input_match for input_match in input_matches if input_match.start() == position][0]
-            new_word += self.generate_output(this_match.group(0))
+            this_match = [valid_match for valid_match in valid_matches if valid_match.start() == position][0]
+            new_word += self.__generate_output(this_match.group(0))
 
         return new_word[1:-1]
 
@@ -184,26 +206,58 @@ def notation_to_SC(catagories: Catagories, notation: str) -> SoundChange:
 
    return SoundChange(catagories, sections[0], sections[1], sections[2], sections[3:], False)
 
-def test_sound_change(notation: str, catagories: Catagories, test_words: str | list[str], output_words: str | list[str]) -> None:
-    SC = notation_to_SC(catagories, notation)
+class SCTest:
+    def __init__(self, notation: str, test_words: str | list[str], output_words: str | list[str]) -> None:
+        self.notation    = notation
+        self.test_words  = [test_words]   if type(test_words)   == type(str) else test_words
+        self.output_words= [output_words] if type(output_words) == type(str) else output_words
 
-    if type(test_words) == type(str):
-        test_words = [test_words]
+        if len(test_words) != len(output_words):
+            raise ValueError("test and output word lists must be the same length")
 
-    if type(output_words) == type(str):
-        output_words = [output_words]
+    def get_test_words_len(self):
+        return len(self.test_words)
 
-    if len(test_words) != len(output_words):
-        raise ValueError("test and output word lists must be the same length")
+    def test(self, catagories: Catagories, test_index: int = 0) -> tuple[bool, int]:
+        all_successful    = True
+        number_successful = 0
 
-    for index, (test_word, output_word) in enumerate(zip(test_words, output_words)):
-        new_word = SC.apply_to(test_word)
+        SC = notation_to_SC(catagories, self.notation)
+
+        heading_buffer = "#" * (77 - len(f"Testing {self.notation}"))
+        print(f"\033[0;34m# Testing {self.notation} {heading_buffer}\033[0m")
+
+        for index, (test_word, output_word) in enumerate(zip(self.test_words, self.output_words)):
+            new_word = SC.apply_to(test_word)
         
-        if new_word == output_word:
-            print(f"{index} \033[1;32mTest Successful\033[0m: {test_word} -> {notation} -> {new_word}")
-            continue
-        
-        print(f"{index} \033[1;31mTest Unsuccessful\033[0m: {test_word} -> {notation} -> {new_word}, expected {output_word}")
+            if new_word == output_word:
+                print(f"{index + test_index} \033[1;32mTest Successful\033[0m:\t{test_word}\t->\t{new_word}")
+                number_successful += 1
+                continue
+            print(f"{index + test_index} \033[1;31mTest Unsuccessful\033[0m:\t{test_word}\t->\t{new_word}, expected {output_word}")
+            all_successful = False
+
+        foot_buffer = "#" * 80
+        print(f"\033[0;34m{foot_buffer}\033[0m\n")
+
+        return (all_successful, number_successful)
+
+def test_multipleSCs(SC_tests: list[SCTest], catagories: Catagories) -> None:
+    number_words_successful = 0
+    number_SCs_successful   = 0
+
+    SC_count = len(SC_tests)
+    word_count = sum([SC_test.get_test_words_len() for SC_test in SC_tests])
+
+    SC_test_number = 0
+    for SC_test in SC_tests:
+        test_results = SC_test.test(catagories, SC_test_number)
+        SC_test_number += SC_test.get_test_words_len()
+        number_SCs_successful += 1 if test_results[0] else 0
+        number_words_successful += test_results[1]
+    
+    print(f"{number_words_successful} / {word_count} words successful.")
+    print(f"{number_SCs_successful} / {SC_count} SCs successful.")
 
 # holds and applies sound changes
 class SoundChanges:
@@ -224,12 +278,25 @@ class InputWords:
 def main():
     catagories = Catagories("V=aiueo\nC=ptkbdghmnŋslr")
     
-    test_sound_change(
-        "i/j/[V#]_V/_o",
-        catagories,
-        ["kaia", "iam", "kaio", "iom"],
-        ["kaja", "jam", "kaio", "iom"]
-    )
+    test_multipleSCs([
+        SCTest(
+            "i/j/[V#]_V/_o",
+            ["kaia", "iam", "kaio", "iom"],
+            ["kaja", "jam", "kaio", "iom"]
+        ),
+        SCTest(
+            "mb/mm/V_V",
+            ["amba", "amb", "mba", "mb"],
+            ["amma", "amb", "mba", "mb"],
+        ),
+        SCTest(
+            "/j/kt_/_#",
+            ["akto", "akt"],
+            ["aktjo", "akt"]
+        )
+    ], catagories)
+
+    #test_sound_change ()
 
 if __name__ == "__main__":
     main()
