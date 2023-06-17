@@ -135,11 +135,57 @@ class SoundChange:
         ]
         return reduce(iconcat, nontext_matches, [])
 
+    def __obtain_sub_context_spans(self, context_matches: list[Match]) -> list[tuple[int]]:
+        # filter out input matches that are also in a context body
+        all_sub_context_spans: list[tuple[int]] = []
+        for context_match in context_matches:
+            context_str = context_match.group(0)
+            start_pos = context_match.start()
+            sub_context_spans: list[tuple[int]] = []
+
+            for context_body_pattern in self.context_bodies:
+                context_body_match = search(context_body_pattern, context_str)
+                if not context_body_match: break
+                context_str = context_str[:context_body_match.end()]
+
+                sub_context_spans.append((start_pos, start_pos + context_body_match.end()))
+                start_pos += context_body_match.end()
+                
+                input_match = search(self.input_pattern, context_str)
+                if not input_match: break
+                context_str = context_str[:input_match.end()]
+            
+            all_sub_context_spans.append(sub_context_spans)
+
+        all_sub_context_spans = [span for span in reduce(iconcat, all_sub_context_spans, [])]
+        return all_sub_context_spans
+
+    def __obtain_epenthesis_spans(self, context_matches: list[Match]) -> list[tuple[int]]:
+        all_sub_context_spans: list[tuple[int]] = []
+        for context_match in context_matches:
+            context_str = context_match.group(0)
+            start_pos = context_match.start()
+            sub_context_spans: list[tuple[int]] = []
+            
+            for context_body_pattern in self.context_bodies:
+                context_body_match = search(context_body_pattern, context_str)
+                if not context_body_match: break
+                context_str = context_str[:context_body_match.end()]
+
+                sub_context_spans.append((start_pos, start_pos + context_body_match.end()))
+                start_pos += context_body_match.end()
+            
+            all_sub_context_spans.append(sub_context_spans)
+
+        all_sub_context_spans = [span for span in reduce(iconcat, all_sub_context_spans, [])]
+        return all_sub_context_spans
+
     # used to find if an input match is inside of a context match. used to select which contexts to SC
     def __is_in_context(self, input_match: Match, context_match: Match) -> bool:
         return context_match.start() <= input_match.start() and input_match.end() <= context_match.end()
 
     def __is_in_sub_context(self, input_match: Match, sub_context_span: tuple[int]) -> bool:
+        if input_match.start() == input_match.end(): return True
         return sub_context_span[0] <= input_match.start() and input_match.end() <= sub_context_span[1]
     
     # obtains the positions of contexts that match the pattern but not which also match any nontexts
@@ -161,53 +207,30 @@ class SoundChange:
         input_matches = [context for context in filter(is_in_context_lmd, input_matches)] # filter those that match a context
         input_matches = [context for context in filterfalse(is_in_nontext_lmd, input_matches)] # filter thoes that are not in a nontext
 
-        # filter out input matches that are also in a context body
+        if self.input_val == "":
+            print("input matches:", input_matches)
+            all_epenthesis_spans = self.__obtain_epenthesis_spans(context_matches)
+            print("epenthesis spans:", all_epenthesis_spans)
 
-        all_sub_context_spans = []
-        for context_match in context_matches:
-            context_str = context_match.group(0)
-            start_pos = context_match.start()
+            is_similar_sub_context_lmd = lambda input_match: any(
+                epenthesis_span[1] == input_match.end()
+                for epenthesis_span in all_epenthesis_spans
+            )
+            
+            valid_matches = [context for context in filter(is_similar_sub_context_lmd, input_matches)]
 
-            sub_context_spans: list[tuple[int]] = []
+            print("valid matches:",valid_matches)
+            return valid_matches
 
-            for context_body_pattern in self.context_bodies:
-                print(f"'{context_body_pattern.pattern}'")
-
-                context_body_match = search(context_body_pattern, context_str)
-
-                if not context_body_match: break
-                context_str = context_str[:context_body_match.end()]
-
-                sub_context_spans.append((start_pos, start_pos + context_body_match.end()))
-                start_pos += context_body_match.end()
-
-                if self.input_pattern == "": continue
-
-                input_match = search(self.input_pattern, context_str)
-                if not input_match: break
-                context_str = context_str[:input_match.end()]
-
-            all_sub_context_spans.append(sub_context_spans)
-
-        all_sub_context_spans = [
-            span for span in
-            filterfalse(lambda span: span[0] == span[1], reduce(iconcat, all_sub_context_spans, []))
-        ]
-
-        print("input matches:", [input_match.span() for input_match in input_matches])
-        print("sub context span:", all_sub_context_spans)
-
+        all_sub_context_spans = self.__obtain_sub_context_spans(context_matches)
         # lambda for seeing which input are inside a sub context
         is_in_sub_context_lmd = lambda input_match: any(
             self.__is_in_sub_context(input_match, sub_context_span)
             for sub_context_span in all_sub_context_spans
         )
         # filters inputs which are not in sub contexts
-        input_matches = [context for context in filterfalse(is_in_sub_context_lmd, input_matches)]
-
-        print("filtered input matches:", [input_match.span() for input_match in input_matches])
-
-        return input_matches
+        valid_matches = [context for context in filterfalse(is_in_sub_context_lmd, input_matches)]
+        return valid_matches    
 
     def apply_to(self, word: str) -> str:
 
@@ -222,6 +245,11 @@ class SoundChange:
 
         new_word = ""
         for position, character in enumerate(word):
+            if self.input_val == "" and position in literal_positions and position in substitute_positions:
+                this_match = [valid_match for valid_match in valid_matches if valid_match.start() == position][0]
+                new_word += self.__generate_output(this_match.group(0)) + character
+                continue
+
             if position in literal_positions:
                 new_word += character
                 continue
