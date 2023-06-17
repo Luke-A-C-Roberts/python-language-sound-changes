@@ -48,18 +48,14 @@ class SoundChange:
         self.metathesize= False
 
         self.input_pattern = self.__compile_context_pattern(input_val, catagories)
-
         self.context_pattern = self.__compile_context_pattern(
             self.__substitute_into_context(context, input_val), catagories
         )
-        
         self.nontext_patterns = [
             self.__compile_context_pattern(self.__substitute_into_context(nontext, input_val), catagories)
             for nontext in nontexts
         ]
-
-        print(context.split("_"))
-        self.context_bodies = [
+        self.sub_context_patterns = [
             self.__compile_context_pattern(context_body, catagories)
             for context_body in context.split("_")
         ]
@@ -114,11 +110,6 @@ class SoundChange:
         context = self.__replace_squares(context)                         # x² -> x{2}
         return compile(context)
 
-    def __generate_output(self, input_match_string: str) -> str:
-        if self.metathesize:
-            raise NotImplementedError("metathesis is not implemented")
-        return self.output_val
-
     # finds all of the inputs presesnt in the word
     def __obtain_input_matches(self, word: str) -> list[Match]:
         return [input_match for input_match in finditer(self.input_pattern, word)]
@@ -135,6 +126,7 @@ class SoundChange:
         ]
         return reduce(iconcat, nontext_matches, [])
 
+    # filters sub context spans for non epenthesis sound changes so that inputs which are in sub contexts are not used
     def __obtain_sub_context_spans(self, context_matches: list[Match]) -> list[tuple[int]]:
         # filter out input matches that are also in a context body
         all_sub_context_spans: list[tuple[int]] = []
@@ -143,13 +135,13 @@ class SoundChange:
             start_pos = context_match.start()
             sub_context_spans: list[tuple[int]] = []
 
-            for context_body_pattern in self.context_bodies:
-                context_body_match = search(context_body_pattern, context_str)
-                if not context_body_match: break
-                context_str = context_str[:context_body_match.end()]
+            for sub_context_pattern in self.sub_context_patterns:
+                sub_context_match = search(sub_context_pattern, context_str)
+                if not sub_context_match: break
+                context_str = context_str[:sub_context_match.end()]
 
-                sub_context_spans.append((start_pos, start_pos + context_body_match.end()))
-                start_pos += context_body_match.end()
+                sub_context_spans.append((start_pos, start_pos + sub_context_match.end()))
+                start_pos += sub_context_match.end()
                 
                 input_match = search(self.input_pattern, context_str)
                 if not input_match: break
@@ -160,6 +152,7 @@ class SoundChange:
         all_sub_context_spans = [span for span in reduce(iconcat, all_sub_context_spans, [])]
         return all_sub_context_spans
 
+    # used for when there is an epenthesis to find the correct places in a SC context to use
     def __obtain_epenthesis_spans(self, context_matches: list[Match]) -> list[tuple[int]]:
         all_sub_context_spans: list[tuple[int]] = []
         for context_match in context_matches:
@@ -167,13 +160,13 @@ class SoundChange:
             start_pos = context_match.start()
             sub_context_spans: list[tuple[int]] = []
             
-            for context_body_pattern in self.context_bodies:
-                context_body_match = search(context_body_pattern, context_str)
-                if not context_body_match: break
-                context_str = context_str[:context_body_match.end()]
+            for sub_context_pattern in self.sub_context_patterns:
+                sub_context_match = search(sub_context_pattern, context_str)
+                if not sub_context_match: break
+                context_str = context_str[:sub_context_match.end()]
 
-                sub_context_spans.append((start_pos, start_pos + context_body_match.end()))
-                start_pos += context_body_match.end()
+                sub_context_spans.append((start_pos, start_pos + sub_context_match.end()))
+                start_pos += sub_context_match.end()
             
             all_sub_context_spans.append(sub_context_spans)
 
@@ -184,6 +177,7 @@ class SoundChange:
     def __is_in_context(self, input_match: Match, context_match: Match) -> bool:
         return context_match.start() <= input_match.start() and input_match.end() <= context_match.end()
 
+    # finds if an input is in a sub context span
     def __is_in_sub_context(self, input_match: Match, sub_context_span: tuple[int]) -> bool:
         if input_match.start() == input_match.end(): return True
         return sub_context_span[0] <= input_match.start() and input_match.end() <= sub_context_span[1]
@@ -207,19 +201,17 @@ class SoundChange:
         input_matches = [context for context in filter(is_in_context_lmd, input_matches)] # filter those that match a context
         input_matches = [context for context in filterfalse(is_in_nontext_lmd, input_matches)] # filter thoes that are not in a nontext
 
+        # for when there is a epenthesis (input is "")
         if self.input_val == "":
-            print("input matches:", input_matches)
             all_epenthesis_spans = self.__obtain_epenthesis_spans(context_matches)
-            print("epenthesis spans:", all_epenthesis_spans)
 
+            # lambda used to filter which inputs are epenthesis
             is_similar_sub_context_lmd = lambda input_match: any(
                 epenthesis_span[1] == input_match.end()
                 for epenthesis_span in all_epenthesis_spans
             )
-            
+            # filters which inputs are epenthesis
             valid_matches = [context for context in filter(is_similar_sub_context_lmd, input_matches)]
-
-            print("valid matches:",valid_matches)
             return valid_matches
 
         all_sub_context_spans = self.__obtain_sub_context_spans(context_matches)
@@ -232,8 +224,14 @@ class SoundChange:
         valid_matches = [context for context in filterfalse(is_in_sub_context_lmd, input_matches)]
         return valid_matches    
 
-    def apply_to(self, word: str) -> str:
+    #generates an output based on notation
+    def __generate_output(self, input_match_string: str) -> str:
+        if self.metathesize:
+            raise NotImplementedError("metathesis is not implemented")
+        return self.output_val
 
+    # applies the SC to a word
+    def apply_to(self, word: str) -> str:
         # add word endings and get the input matches
         word = f"#{word}#"
         valid_matches = self.__obtain_valid_matches(word)
@@ -262,6 +260,7 @@ class SoundChange:
 
         return new_word[1:-1]
 
+# converts notation to a SoundChange object
 def notation_to_SC(catagories: Catagories, notation: str) -> SoundChange:
    sections = notation.split("/")
    if len(sections) < 3:
@@ -272,6 +271,7 @@ def notation_to_SC(catagories: Catagories, notation: str) -> SoundChange:
 
    return SoundChange(catagories, sections[0], sections[1], sections[2], sections[3:], False)
 
+# used to debug applying sound changes to words
 class SCTest:
     def __init__(self, notation: str, test_words: str | list[str], output_words: str | list[str]) -> None:
         self.notation    = notation
@@ -308,6 +308,7 @@ class SCTest:
 
         return (all_successful, number_successful)
 
+# allows multiple numbered sound change tests at once
 def test_multipleSCs(SC_tests: list[SCTest], catagories: Catagories) -> None:
     number_words_successful = 0
     number_SCs_successful   = 0
@@ -346,23 +347,41 @@ def main():
     
     test_multipleSCs([
         SCTest(
-            "/j/kt_/_#",
+            "i/j/[V#]_V/_o",
+            ["kaia", "iam", "kaio", "iom"],
+            ["kaja", "jam", "kaio", "iom"]
+        ),
+        SCTest(
+            "mb/mm/V_V",
+            ["amba", "amb", "mba", "mb"],
+            ["amma", "amb", "mba", "mb"],
+        ),
+        SCTest(
+            "/j/kt_",
             ["akto", "akt"],
-            ["aktjo", "akt"]
+            ["aktjo", "aktj"]
         ),
         SCTest(
             "/j/_kt",
-            ["akto"],
-            ["ajkto"]
+            ["akto", "kto"],
+            ["ajkto", "jkto"]
         ),
         SCTest(
             "/j/k_t",
             ["akto"],
             ["akjto"]
         ),
+        SCTest(
+            "a/o/ah_",
+            ["naha"],
+            ["naho"]
+        ),
+        SCTest(
+            "V²/a/_",
+            ["kaam"],
+            ["kam"]
+        )
     ], catagories)
-
-    #test_sound_change ()
 
 if __name__ == "__main__":
     main()
