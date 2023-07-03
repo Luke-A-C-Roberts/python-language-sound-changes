@@ -1,4 +1,4 @@
-from catagories import Catagory, Catagories
+from catagories    import Catagory, Catagories
 from sound_changes import SoundChange, notation_to_SC
 
 
@@ -6,14 +6,19 @@ from sound_changes import SoundChange, notation_to_SC
 class SCTest:
     def __init__(self, notation: str, test_words: str | list[str], output_words: str | list[str]) -> None:
         self.notation = notation
+        
         self.test_words = [test_words] if type(
-            test_words) == type(str) else test_words
+            test_words
+        ) == type(str) else test_words
+        
         self.output_words = [output_words] if type(
-            output_words) == type(str) else output_words
+            output_words
+        ) == type(str) else output_words
 
         if len(test_words) != len(output_words):
             raise ValueError(
-                "test and output word lists must be the same length")
+                "test and output word lists must be the same length"
+            )
 
     def get_test_words_len(self):
         return len(self.test_words)
@@ -28,7 +33,7 @@ class SCTest:
         print(f"\033[0;34m# Testing {self.notation} {heading_buffer}\033[0m")
 
         for index, (test_word, output_word) in enumerate(zip(self.test_words, self.output_words)):
-            new_word = SC.apply_to(test_word)
+            new_word = SC.apply_to(test_word, catagories)
 
             if new_word == output_word:
                 print(

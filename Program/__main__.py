@@ -1,13 +1,9 @@
-
 from catagories import Catagories
 from test import test_multipleSCs, SCTest
 
 # holds input words
-
-
 class InputWords:
     pass
-
 
 def main():
     catagories = Catagories("V=aiueo\nC=ptkbdghmnŋslr")
