@@ -35,6 +35,10 @@ class SoundChange:
             for context_body in context.split("_")
         ]
 
+    # 2D list flattened to 1D list
+    def __flatten_list(self, l: list[list[any]] | list[tuple[any]]) -> list[any]:
+        return reduce(iconcat, l, [])
+
     # used to substitute the input into the context so that it can find matches
     def __substitute_into_context(self, context: str, value: str) -> str:
         return context.replace("_", value) if "_" in context else context
@@ -64,7 +68,7 @@ class SoundChange:
             if context[0] == "*":
                 context[0] = "."
         except:
-            print(context)
+            return context
 
         wildcard_positions: list[int] = []
 
@@ -123,7 +127,7 @@ class SoundChange:
             list(finditer(nontext_pattern, word))
             for nontext_pattern in self.nontext_patterns
         ]
-        return reduce(iconcat, nontext_matches, [])
+        return self.__flatten_list(nontext_matches)
 
     # filters sub context spans for non epenthesis sound changes so that inputs which are in sub contexts are not used
     def __obtain_sub_context_spans(self, context_matches: list[Match]) -> list[tuple[int]]:
@@ -154,10 +158,7 @@ class SoundChange:
 
             all_sub_context_spans.append(sub_context_spans)
 
-        all_sub_context_spans = [
-            span for span in reduce(iconcat, all_sub_context_spans, [])
-        ]
-        return all_sub_context_spans
+        return  self.__flatten_list(all_sub_context_spans)
 
     # used for when there is an epenthesis to find the correct places in a SC context to use
     def __obtain_epenthesis_spans(self, context_matches: list[Match]) -> list[tuple[int]]:
@@ -182,10 +183,7 @@ class SoundChange:
 
             all_sub_context_spans.append(sub_context_spans)
 
-        all_sub_context_spans = [
-            span for span in reduce(iconcat, all_sub_context_spans, [])
-        ]
-        return all_sub_context_spans
+        return self.__flatten_list(all_sub_context_spans)
 
     # used to find if an input match is inside of a context match. used to select which contexts to SC
     def __is_in_context(self, input_match: Match, context_match: Match) -> bool:
@@ -253,7 +251,7 @@ class SoundChange:
         valid_matches = list(filterfalse(
             is_in_sub_context_lmd, input_matches
         ))
-
+        
         return valid_matches
 
     # generate_normal_output
@@ -298,7 +296,7 @@ class SoundChange:
         )
 
         if len(o_search_matches) > len(i_search_matches):
-            raise(ValueError("there are more output_catagories than input_catagories"))
+            raise(ValueError("there are more output catagories than input catagories"))
 
         if len(o_search_matches) == 0:
             return self.output_val
@@ -307,14 +305,39 @@ class SoundChange:
         i_str_copy = i_str
         for i_search_match in i_search_matches:
             i_str_copy.replace(i_search_match.group(0), "_")
-        i_non_search_matches = i_str_copy.split("_").remove("")
+
+        i_non_search_matches = filterfalse(lambda s: s == "", i_str_copy.split("_"))
         
         input_match_catagory_matches = [input_match_string]
         for non_search_match in i_non_search_matches:
             input_match_catagory_matches[-1].split(non_search_match)
             reduce(iconcat, input_match_catagory_matches, [])
 
-        input_match_catagory_matches.remove("")
+        filterfalse(lambda s: s == "", input_match_catagory_matches)
+
+        io_catagory_strs = [
+            input_match_catagory_matches,
+            [ism.group(0) for ism in i_search_matches],
+            [osm.group(0) for osm in o_search_matches]
+        ]
+
+        o_write_regions = [search_match.start() for search_match in o_search_matches]
+        o_non_write_regions = reduce(iconcat, [
+            list(range(search_match.start()+1, search_match.end()))
+            for search_match in o_search_matches
+        ], [])
+
+        output: str = ""
+        io_cat_str_pos = 0
+        for position, o_character in enumerate(o_str):
+            if position in o_non_write_regions: continue
+            if position in o_write_regions:
+                i_catagory_position = io_catagory_strs[1][io_cat_str_pos].index(io_catagory_strs[0][io_cat_str_pos])
+                output += list(io_catagory_strs[2][io_cat_str_pos])[i_catagory_position]
+                continue
+            output + o_character
+
+        return output
 
     # generate_metathesis_output
     def __generate_metathesis_output(self, input_match_string: str, catagories: Catagories) -> str:
@@ -328,10 +351,7 @@ class SoundChange:
         return self.__generate_normal_output(input_match_string, catagories)
 
     # applies the SC to a word
-    def apply_to(self, word: str, catagories: Catagories) -> str:
-        # add word endings and get the input matches
-        word = f"#{word}#"
-        valid_matches = self.__obtain_valid_matches(word)
+    def __apply_single_SC(self, word: str, valid_matches: list[Match], catagories: Catagories) -> str:
 
         match_positions = [[
                 i for i in range(this_match.start(), this_match.end())
@@ -373,8 +393,18 @@ class SoundChange:
                 this_match.group(0), catagories
             )
 
-        return new_word[1:-1]
+        return new_word
 
+    def apply_to(self, word: str, catagories: Catagories) -> str:
+        word = f"#{word}#"
+
+        while True:
+            valid_matches = self.__obtain_valid_matches(word)
+            if valid_matches == []: break
+            word = self.__apply_single_SC(word, valid_matches, catagories)
+            if self.input_val == "": break
+
+        return word[1:-1]
 
 # converts notation to a SoundChange object
 def notation_to_SC(catagories: Catagories, notation: str) -> SoundChange:

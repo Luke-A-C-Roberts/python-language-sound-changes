@@ -6,7 +6,7 @@ class InputWords:
     pass
 
 def main():
-    catagories = Catagories("V=aiueo\nC=ptkbdghmnŋslr")
+    catagories = Catagories("V=aiueo\nC=ptkbdghmnŋslr\nX=ptk\nY=bdg")
 
     test_multipleSCs([
         SCTest(
@@ -16,23 +16,23 @@ def main():
         ),
         SCTest(
             "mb/mm/V_V",
-            ["amba", "amb", "mba", "mb"],
-            ["amma", "amb", "mba", "mb"],
+            ["amba", "amb", "mba", "mb", "ambamba"],
+            ["amma", "amb", "mba", "mb", "ammamma"],
         ),
         SCTest(
             "/j/kt_",
-            ["akto", "akt"],
-            ["aktjo", "aktj"]
+            ["akto", "akt", "aktakto"],
+            ["aktjo", "aktj", "aktjaktjo"]
         ),
         SCTest(
             "/j/_kt",
-            ["akto", "kto"],
-            ["ajkto", "jkto"]
+            ["akto", "kto", "aktakto"],
+            ["ajkto", "jkto", "ajktajkto"]
         ),
         SCTest(
             "/j/k_t",
-            ["akto"],
-            ["akjto"]
+            ["akto", "aktakto"],
+            ["akjto", "akjtakjto"]
         ),
         SCTest(
             "a/o/ah_",
@@ -43,6 +43,11 @@ def main():
             "V²/a/_",
             ["kaam"],
             ["kam"]
+        ),
+        SCTest(
+            "X/Y/V_V",
+            ["apa","apake"],
+            ["aba","abage"]
         )
     ], catagories)
 
