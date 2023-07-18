@@ -333,44 +333,48 @@ class SoundChange:
 
         i_non_search_matches: list[str] = []
 
-        # replaces catagories with _ so they can be replaced and then split
-        i_str_copy = i_str
-        for i_search_match in i_search_matches:
-            i_str_copy.replace(i_search_match.group(0), "_")
+        # replaces catagories with _ so they can be replaced
+        for o_search_match in o_search_matches:
+            match_str = o_search_match.group(0)
+            o_str = o_str.replace(match_str, "_")
 
-        i_non_search_matches = filterfalse(lambda s: s == "", i_str_copy.split("_"))
+        # splits input into a template for output, keeping "_" seperate eg. "a_ka" -> ["a", "_", "ka"]
+        o_template: list[str] = []
+        temp_str = ""
+        for character in list(o_str):
+            if character == "_":
+                o_template.append(temp_str)
+                temp_str = ""
+                o_template.append("_")
+                continue
+            temp_str += character
 
-        # 
+        o_template = list(filterfalse(lambda string: string == "", o_template))
+
+        # finds the characters that correspond to catagories in the input match
         input_match_catagory_matches = [input_match_string]
         for non_search_match in i_non_search_matches:
             input_match_catagory_matches[-1].split(non_search_match)
             self.__flatten_list(input_match_catagory_matches)
 
-        filterfalse(lambda s: s == "", input_match_catagory_matches)
-
+        # builds a structure which is used to match input, input catagory and output catagory
         io_catagory_strs = [
-            input_match_catagory_matches,
+            self.__flatten_list(list(input_match_catagory_matches[0])),
             [ism.group(0) for ism in i_search_matches],
             [osm.group(0) for osm in o_search_matches]
         ]
 
-        print(io_catagory_strs)
-
-        o_write_regions = [search_match.start() for search_match in o_search_matches]
-        o_non_write_regions = reduce(iconcat, [
-            list(range(search_match.start()+1, search_match.end()))
-            for search_match in o_search_matches
-        ], [])
-
-        output: str = ""
-        io_cat_str_pos = 0
-        for position, o_character in enumerate(o_str):
-            if position in o_non_write_regions: continue
-            if position in o_write_regions:
-                i_catagory_position = io_catagory_strs[1][io_cat_str_pos].index(io_catagory_strs[0][io_cat_str_pos])
-                output += list(io_catagory_strs[2][io_cat_str_pos])[i_catagory_position]
+        output = ""
+        io_catagory_pos = 0
+        for o_substring in o_template:
+            if o_substring == "_":
+                input_character = io_catagory_strs[0][io_catagory_pos]
+                input_pos = list(io_catagory_strs[1][io_catagory_pos]).index(input_character)
+                output_character = list(io_catagory_strs[2][io_catagory_pos])[input_pos]
+                output += output_character
+                io_catagory_pos += 1
                 continue
-            output + o_character
+            output + o_substring
 
         return output
 
