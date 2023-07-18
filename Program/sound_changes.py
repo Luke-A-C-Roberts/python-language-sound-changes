@@ -1,11 +1,10 @@
-from re        import Match, Pattern, compile, finditer, search, split
+from re        import Match, Pattern, compile, finditer, search
 from functools import reduce
 from operator  import iconcat
 from itertools import filterfalse
 from random    import choice
 
 from catagories import Catagories, Catagory
-
 
 # sound change object used both for detecting contexts where a sound change can occur, and applying sound changes
 class SoundChange:
@@ -34,6 +33,35 @@ class SoundChange:
             self.__compile_context_pattern(context_body, catagories)
             for context_body in context.split("_")
         ]
+
+    # SCMatch object which allows position mutability
+    class __SCMatch:
+        def __init__(self, re_match: Match) -> None:
+            self.startpos= re_match.start()
+            self.endpos  = re_match.end()
+
+            self.__groups: list[str] = []
+            position = 0
+            while True:
+                try: self.__groups.append(re_match.group(position))
+                except IndexError: break
+                position += 1
+            self.__groups_length = len(self.__groups)
+
+        # gets position data
+        def span(self)  -> (int, int): return (self.startpos, self.endpos)
+        def start(self) -> int: return self.startpos
+        def end(self)   -> int: return self.endpos
+
+        # gets group string
+        def group(self, position: int) -> str:
+            if -1 < position < self.__groups_length:
+                return self.__groups[position]
+            raise IndexError("position outside of group list")
+
+    # converts list of matches to SCMatch Objects
+    def __to_scmatches(self, matches: list[Match]) -> list[__SCMatch]:
+        return [self.__SCMatch(this_match) for this_match in matches]
 
     # 2D list flattened to 1D list
     def __flatten_list(self, l: list[list[any]] | list[tuple[any]]) -> list[any]:
@@ -114,23 +142,23 @@ class SoundChange:
         return compile(context)
 
     # finds all of the inputs presesnt in the word
-    def __obtain_input_matches(self, word: str) -> list[Match]:
-        return list(finditer(self.input_pattern, word))
+    def __obtain_input_matches(self, word: str) -> list[__SCMatch]:
+        return self.__to_scmatches(list(finditer(self.input_pattern, word)))
 
     # finds all of the contexts for the sound change
-    def __obtain_context_matches(self, word: str) -> list[Match]:
-        return list(finditer(self.context_pattern, word))
+    def __obtain_context_matches(self, word: str) -> list[__SCMatch]:
+        return self.__to_scmatches(list(finditer(self.context_pattern, word)))
 
     # finds all of the nontexts (exceptions to contexts) for the sound change
-    def __obtain_nontext_matches(self, word: str) -> list[Match]:
+    def __obtain_nontext_matches(self, word: str) -> list[__SCMatch]:
         nontext_matches = [
             list(finditer(nontext_pattern, word))
             for nontext_pattern in self.nontext_patterns
         ]
-        return self.__flatten_list(nontext_matches)
+        return self.__to_scmatches(self.__flatten_list(nontext_matches))
 
     # filters sub context spans for non epenthesis sound changes so that inputs which are in sub contexts are not used
-    def __obtain_sub_context_spans(self, context_matches: list[Match]) -> list[tuple[int]]:
+    def __obtain_sub_context_spans(self, context_matches: list[__SCMatch]) -> list[tuple[int]]:
         # filter out input matches that are also in a context body
         all_sub_context_spans: list[tuple[int]] = []
         for context_match in context_matches:
@@ -161,13 +189,13 @@ class SoundChange:
         return  self.__flatten_list(all_sub_context_spans)
 
     # used for when there is an epenthesis to find the correct places in a SC context to use
-    def __obtain_epenthesis_spans(self, context_matches: list[Match]) -> list[tuple[int]]:
+    def __obtain_epenthesis_spans(self, context_matches: list[__SCMatch]) -> list[tuple[int]]:
         all_sub_context_spans: list[tuple[int]] = []
         for context_match in context_matches:
             context_str = context_match.group(0)
             start_pos = context_match.start()
             sub_context_spans: list[tuple[int]] = []
- 
+
             # finds a match for each subcontext pattern to extract position of a gap between sub_contexts
             for sub_context_pattern in self.sub_context_patterns:
                 sub_context_match = search(sub_context_pattern, context_str)
@@ -186,7 +214,7 @@ class SoundChange:
         return self.__flatten_list(all_sub_context_spans)
 
     # used to find if an input match is inside of a context match. used to select which contexts to SC
-    def __is_in_context(self, input_match: Match, context_match: Match) -> bool:
+    def __is_in_context(self, input_match: Match, context_match: __SCMatch) -> bool:
         return context_match.start() <= input_match.start() and input_match.end() <= context_match.end()
 
     # finds if an input is in a sub context span
@@ -196,7 +224,7 @@ class SoundChange:
         return sub_context_span[0] <= input_match.start() and input_match.end() <= sub_context_span[1]
 
     # obtains the positions of contexts that match the pattern but not which also match any nontexts
-    def __obtain_valid_matches(self, word: str) -> list[Match]:
+    def __obtain_valid_matches(self, word: str) -> list[__SCMatch]:
 
         input_matches = self.__obtain_input_matches(word)
         context_matches = self.__obtain_context_matches(word)
@@ -230,7 +258,7 @@ class SoundChange:
                 epenthesis_span[1] == input_match.end()
                 for epenthesis_span in all_epenthesis_spans
             )
-        
+
             # filters which inputs are epenthesis
             valid_matches = list(filter(
                 is_similar_sub_context_lmd, input_matches
@@ -246,72 +274,77 @@ class SoundChange:
             self.__is_in_sub_context(input_match, sub_context_span)
             for sub_context_span in all_sub_context_spans
         )
-        
+
         # filters inputs which are not in sub contexts
         valid_matches = list(filterfalse(
             is_in_sub_context_lmd, input_matches
         ))
-        
+
         return valid_matches
 
     # generate_normal_output
     def __generate_normal_output(self, input_match_string: str, catagories: Catagories) -> str:
+        # formats input and output for searching
         i_str = self.__substitute_catagories(self.input_val, catagories)
         i_str = self.__remove_higher_level_brackets(i_str)
         i_str = self.__replace_squares(i_str)
-
         o_str = self.__substitute_catagories(self.output_val, catagories)
         o_str = self.__remove_higher_level_brackets(o_str)
         o_str = self.__replace_squares(o_str)
-        
+
+        # finds the substring catagories
         i_substr_catagories = list(finditer(r"\[[^\[\]]+\]", i_str))             # [abc]de[fg] -> [abc] [fg]
         i_substr_double_catagories = list(finditer(r"\[[^\[\]]+\]\{2\}", i_str)) # [abc]{2}def -> [abc]{2}
-
         o_substr_catagories = list(finditer(r"\[[^\[\]]+\]", o_str))
         o_substr_double_catagories = list(finditer(r"\[[^\[\]]+\]\{2\}", o_str))
 
+        # filters all catagories that are also doubles
         def in_substr_double_catagory(substr_catagory: Match, substr_double_catagories: list[Match]): return any([
             substr_catagory.start() == substr_double_catagory.start()
             for substr_double_catagory in substr_double_catagories
         ])
-
         i_substr_catagories = list(filterfalse(
             lambda i_substr_catagory: in_substr_double_catagory(i_substr_catagory, i_substr_double_catagories),
             i_substr_catagories
         ))
-
         o_substr_catagories = list(filterfalse(
             lambda o_substr_catagory: in_substr_double_catagory(o_substr_catagory, o_substr_double_catagories),
             o_substr_catagories
         ))
 
+        #sorts the io catagory matches
         i_search_matches: list[Match] = sorted(
             i_substr_catagories + i_substr_double_catagories,
             key=lambda this_match: this_match.start()
         )
-
         o_search_matches: list[Match] = sorted(
             o_substr_catagories + o_substr_double_catagories,
             key=lambda this_match: this_match.start()
         )
 
+        # checks a SC to see if there are more output than input catagories
+        # having more output catagories doesn't work since there's nothing to substitute
         if len(o_search_matches) > len(i_search_matches):
             raise(ValueError("there are more output catagories than input catagories"))
 
+        # if there are no output catagories their is no need for substitution so the output is given
         if len(o_search_matches) == 0:
             return self.output_val
 
         i_non_search_matches: list[str] = []
+
+        # replaces catagories with _ so they can be replaced and then split
         i_str_copy = i_str
         for i_search_match in i_search_matches:
             i_str_copy.replace(i_search_match.group(0), "_")
 
         i_non_search_matches = filterfalse(lambda s: s == "", i_str_copy.split("_"))
-        
+
+        # 
         input_match_catagory_matches = [input_match_string]
         for non_search_match in i_non_search_matches:
             input_match_catagory_matches[-1].split(non_search_match)
-            reduce(iconcat, input_match_catagory_matches, [])
+            self.__flatten_list(input_match_catagory_matches)
 
         filterfalse(lambda s: s == "", input_match_catagory_matches)
 
@@ -320,6 +353,8 @@ class SoundChange:
             [ism.group(0) for ism in i_search_matches],
             [osm.group(0) for osm in o_search_matches]
         ]
+
+        print(io_catagory_strs)
 
         o_write_regions = [search_match.start() for search_match in o_search_matches]
         o_non_write_regions = reduce(iconcat, [
@@ -351,7 +386,7 @@ class SoundChange:
         return self.__generate_normal_output(input_match_string, catagories)
 
     # applies the SC to a word
-    def __apply_single_SC(self, word: str, valid_matches: list[Match], catagories: Catagories) -> str:
+    def __apply_single_SC(self, word: str, valid_matches: list[__SCMatch], catagories: Catagories) -> str:
 
         match_positions = [[
                 i for i in range(this_match.start(), this_match.end())

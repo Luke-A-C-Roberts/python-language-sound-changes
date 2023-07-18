@@ -36,8 +36,8 @@ def main():
         ),
         SCTest(
             "a/o/ah_",
-            ["naha"],
-            ["naho"]
+            ["naha", "nahaha"],
+            ["naho", "nahoho"]
         ),
         SCTest(
             "V²/a/_",
@@ -48,6 +48,11 @@ def main():
             "X/Y/V_V",
             ["apa","apake"],
             ["aba","abage"]
+        ),
+        SCTest(
+            "XY/YX/V_V",
+            ["apba"],
+            ["abpa"]
         )
     ], catagories)
 
