@@ -6,11 +6,11 @@ from sound_changes import SoundChange, notation_to_SC
 class SCTest:
     def __init__(self, notation: str, test_words: str | list[str], output_words: str | list[str]) -> None:
         self.notation = notation
-        
+
         self.test_words = [test_words] if type(
             test_words
         ) == type(str) else test_words
-        
+
         self.output_words = [output_words] if type(
             output_words
         ) == type(str) else output_words
@@ -23,7 +23,7 @@ class SCTest:
     def get_test_words_len(self):
         return len(self.test_words)
 
-    def test(self, catagories: Catagories, test_index: int = 0) -> tuple[bool, int]:
+    def test(self, catagories: Catagories, test_index: int = 0, show_success: bool = True) -> tuple[bool, int]:
         all_successful = True
         number_successful = 0
 
@@ -36,12 +36,15 @@ class SCTest:
             new_word = SC.apply_to(test_word, catagories)
 
             if new_word == output_word:
-                print(
-                    f"{index + test_index} \033[1;32mTest Successful\033[0m:\t{test_word}\t->\t{new_word}")
+                if show_success:
+                    print (
+                        f"{index + test_index} \033[1;32mTest Successful\033[0m:\t{test_word}\t->\t{new_word}"
+                    )
                 number_successful += 1
                 continue
-            print(
-                f"{index + test_index} \033[1;31mTest Unsuccessful\033[0m:\t{test_word}\t->\t{new_word}, expected {output_word}")
+            print (
+                f"{index + test_index} \033[1;31mTest Unsuccessful\033[0m:\t{test_word}\t->\t{new_word}, expected {output_word}"
+            )
             all_successful = False
 
         foot_buffer = "#" * 80
@@ -51,7 +54,7 @@ class SCTest:
 
 
 # allows multiple numbered sound change tests at once
-def test_multipleSCs(SC_tests: list[SCTest], catagories: Catagories) -> None:
+def test_multipleSCs(SC_tests: list[SCTest], catagories: Catagories, show_success: bool = True) -> None:
     number_words_successful = 0
     number_SCs_successful = 0
 
@@ -60,7 +63,7 @@ def test_multipleSCs(SC_tests: list[SCTest], catagories: Catagories) -> None:
 
     SC_test_number = 0
     for SC_test in SC_tests:
-        test_results = SC_test.test(catagories, SC_test_number)
+        test_results = SC_test.test(catagories, SC_test_number, show_success)
         SC_test_number += SC_test.get_test_words_len()
         number_SCs_successful += 1 if test_results[0] else 0
         number_words_successful += test_results[1]
