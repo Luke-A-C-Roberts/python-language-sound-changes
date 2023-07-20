@@ -53,6 +53,11 @@ def main():
             "XY/YX/V_V",
             ["apba"],
             ["abpa"]
+        ),
+        SCTest(
+            "a/aa/_",
+            ["a"],
+            ["aa"]
         )
     ], catagories, True)
 

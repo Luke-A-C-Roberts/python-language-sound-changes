@@ -14,21 +14,34 @@ class SoundChange:
         self.context   = context
         self.nontexts  = nontexts
 
+        # bools for SC type
         self.is_epenthesis = input_val == ""
         self.is_metathesis = metathesize
 
+        # formats input and output for generation of output based on input
+        self.i_str = self.__substitute_catagories(self.input_val, catagories)
+        self.i_str = self.__remove_higher_level_brackets(self.i_str)
+        self.i_str = self.__replace_squares(self.i_str)
+        self.o_str = self.__substitute_catagories(self.output_val, catagories)
+        self.o_str = self.__remove_higher_level_brackets(self.o_str)
+        self.o_str = self.__replace_squares(self.o_str)
+
+        # regex pattern object generation for searching
         self.input_pattern = self.__compile_context_pattern(
             input_val, catagories
         )
+
         self.context_pattern = self.__compile_context_pattern(
             self.__substitute_into_context(context, input_val), catagories
         )
+
         self.nontext_patterns = [
             self.__compile_context_pattern(
                 self.__substitute_into_context(nontext, input_val), catagories
             )
             for nontext in nontexts
         ]
+
         self.sub_context_patterns = [
             self.__compile_context_pattern(context_body, catagories)
             for context_body in context.split("_")
@@ -284,19 +297,13 @@ class SoundChange:
 
     # generate_normal_output
     def __generate_normal_output(self, input_match_string: str, catagories: Catagories) -> str:
-        # formats input and output for searching
-        i_str = self.__substitute_catagories(self.input_val, catagories)
-        i_str = self.__remove_higher_level_brackets(i_str)
-        i_str = self.__replace_squares(i_str)
-        o_str = self.__substitute_catagories(self.output_val, catagories)
-        o_str = self.__remove_higher_level_brackets(o_str)
-        o_str = self.__replace_squares(o_str)
+
 
         # finds the substring catagories
-        i_substr_catagories = list(finditer(r"\[[^\[\]]+\]", i_str))             # [abc]de[fg] -> [abc] [fg]
-        i_substr_double_catagories = list(finditer(r"\[[^\[\]]+\]\{2\}", i_str)) # [abc]{2}def -> [abc]{2}
-        o_substr_catagories = list(finditer(r"\[[^\[\]]+\]", o_str))
-        o_substr_double_catagories = list(finditer(r"\[[^\[\]]+\]\{2\}", o_str))
+        i_substr_catagories = list(finditer(r"\[[^\[\]]+\]", self.i_str))             # [abc]de[fg] -> [abc] [fg]
+        i_substr_double_catagories = list(finditer(r"\[[^\[\]]+\]\{2\}", self.i_str)) # [abc]{2}def -> [abc]{2}
+        o_substr_catagories = list(finditer(r"\[[^\[\]]+\]", self.o_str))
+        o_substr_double_catagories = list(finditer(r"\[[^\[\]]+\]\{2\}", self.o_str))
 
         # filters all catagories that are also doubles
         def in_substr_double_catagory(substr_catagory: Match, substr_double_catagories: list[Match]): return any([
@@ -334,14 +341,15 @@ class SoundChange:
         i_non_search_matches: list[str] = []
 
         # replaces catagories with _ so they can be replaced
+        o_str_cpy = self.o_str
         for o_search_match in o_search_matches:
             match_str = o_search_match.group(0)
-            o_str = o_str.replace(match_str, "_")
+            o_str_cpy = o_str_cpy.replace(match_str, "_")
 
         # splits input into a template for output, keeping "_" seperate eg. "a_ka" -> ["a", "_", "ka"]
         o_template: list[str] = []
         temp_str = ""
-        for character in list(o_str):
+        for character in list(o_str_cpy):
             if character == "_":
                 o_template.append(temp_str)
                 temp_str = ""
@@ -443,8 +451,10 @@ class SoundChange:
             if valid_matches == []: break
             word = self.__apply_single_SC(word, valid_matches, catagories)
             if self.input_val == "": break
+            if self.i_str in self.o_str: break
 
         return word[1:-1]
+
 
 # converts notation to a SoundChange object
 def notation_to_SC(catagories: Catagories, notation: str) -> SoundChange:
