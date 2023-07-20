@@ -54,7 +54,7 @@ def main():
             ["apba"],
             ["abpa"]
         )
-    ], catagories, False)
+    ], catagories, True)
 
 
 if __name__ == "__main__":

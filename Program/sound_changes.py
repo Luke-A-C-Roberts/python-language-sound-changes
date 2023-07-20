@@ -34,35 +34,6 @@ class SoundChange:
             for context_body in context.split("_")
         ]
 
-    # SCMatch object which allows position mutability
-    class __SCMatch:
-        def __init__(self, re_match: Match) -> None:
-            self.startpos= re_match.start()
-            self.endpos  = re_match.end()
-
-            self.__groups: list[str] = []
-            position = 0
-            while True:
-                try: self.__groups.append(re_match.group(position))
-                except IndexError: break
-                position += 1
-            self.__groups_length = len(self.__groups)
-
-        # gets position data
-        def span(self)  -> (int, int): return (self.startpos, self.endpos)
-        def start(self) -> int: return self.startpos
-        def end(self)   -> int: return self.endpos
-
-        # gets group string
-        def group(self, position: int) -> str:
-            if -1 < position < self.__groups_length:
-                return self.__groups[position]
-            raise IndexError("position outside of group list")
-
-    # converts list of matches to SCMatch Objects
-    def __to_scmatches(self, matches: list[Match]) -> list[__SCMatch]:
-        return [self.__SCMatch(this_match) for this_match in matches]
-
     # 2D list flattened to 1D list
     def __flatten_list(self, l: list[list[any]] | list[tuple[any]]) -> list[any]:
         return reduce(iconcat, l, [])
@@ -142,23 +113,52 @@ class SoundChange:
         return compile(context)
 
     # finds all of the inputs presesnt in the word
-    def __obtain_input_matches(self, word: str) -> list[__SCMatch]:
-        return self.__to_scmatches(list(finditer(self.input_pattern, word)))
+    def __obtain_input_matches(self, word: str) -> list[Match]:
+        return list(finditer(self.input_pattern, word))
+
+    # used to see if there is a problem with overlapping regex
+    def __same_affixes(self, s: str) -> str:
+        # hello -> he lo,  friend -> fri end
+        size  = len(s) // 2
+        start = [s[:i] for i in range(1, size+1)]
+        end   = [s[-i:] for i in range(1, size+1)]
+        for x in zip(start, end):
+            if x[0] == x[1]: return x[0]
+        return ""
+
+    # method for gernerating multiple overlapping patterns
+    def __overlapping_finditer(self, r: Pattern, s: str):
+        is_same_affixes = self.__same_affixes(r.pattern)
+        if is_same_affixes == "": return finditer(r,s)
+        blank_len = len(r.pattern) - len(is_same_affixes)
+        results = []
+        while True:
+            result = list(r.finditer(s))
+            if result == []: break
+            for match in result:
+                s = list(s)
+                index = match.start()
+                for s_index in range(index, index + blank_len):
+                    if s_index < len(s):
+                        s[s_index] = "_"
+                s = ''.join(s)
+            results += result
+        return iter(results)
 
     # finds all of the contexts for the sound change
-    def __obtain_context_matches(self, word: str) -> list[__SCMatch]:
-        return self.__to_scmatches(list(finditer(self.context_pattern, word)))
+    def __obtain_context_matches(self, word: str) -> list[Match]:
+        return list(self.__overlapping_finditer(self.context_pattern, word))
 
     # finds all of the nontexts (exceptions to contexts) for the sound change
-    def __obtain_nontext_matches(self, word: str) -> list[__SCMatch]:
+    def __obtain_nontext_matches(self, word: str) -> list[Match]:
         nontext_matches = [
-            list(finditer(nontext_pattern, word))
+            list(self.__overlapping_finditer(nontext_pattern, word))
             for nontext_pattern in self.nontext_patterns
         ]
-        return self.__to_scmatches(self.__flatten_list(nontext_matches))
+        return self.__flatten_list(nontext_matches)
 
     # filters sub context spans for non epenthesis sound changes so that inputs which are in sub contexts are not used
-    def __obtain_sub_context_spans(self, context_matches: list[__SCMatch]) -> list[tuple[int]]:
+    def __obtain_sub_context_spans(self, context_matches: list[Match]) -> list[tuple[int]]:
         # filter out input matches that are also in a context body
         all_sub_context_spans: list[tuple[int]] = []
         for context_match in context_matches:
@@ -189,7 +189,7 @@ class SoundChange:
         return  self.__flatten_list(all_sub_context_spans)
 
     # used for when there is an epenthesis to find the correct places in a SC context to use
-    def __obtain_epenthesis_spans(self, context_matches: list[__SCMatch]) -> list[tuple[int]]:
+    def __obtain_epenthesis_spans(self, context_matches: list[Match]) -> list[tuple[int]]:
         all_sub_context_spans: list[tuple[int]] = []
         for context_match in context_matches:
             context_str = context_match.group(0)
@@ -214,7 +214,7 @@ class SoundChange:
         return self.__flatten_list(all_sub_context_spans)
 
     # used to find if an input match is inside of a context match. used to select which contexts to SC
-    def __is_in_context(self, input_match: Match, context_match: __SCMatch) -> bool:
+    def __is_in_context(self, input_match: Match, context_match: Match) -> bool:
         return context_match.start() <= input_match.start() and input_match.end() <= context_match.end()
 
     # finds if an input is in a sub context span
@@ -224,7 +224,7 @@ class SoundChange:
         return sub_context_span[0] <= input_match.start() and input_match.end() <= sub_context_span[1]
 
     # obtains the positions of contexts that match the pattern but not which also match any nontexts
-    def __obtain_valid_matches(self, word: str) -> list[__SCMatch]:
+    def __obtain_valid_matches(self, word: str) -> list[Match]:
 
         input_matches = self.__obtain_input_matches(word)
         context_matches = self.__obtain_context_matches(word)
@@ -364,6 +364,7 @@ class SoundChange:
             [osm.group(0) for osm in o_search_matches]
         ]
 
+        # generates output
         output = ""
         io_catagory_pos = 0
         for o_substring in o_template:
@@ -390,7 +391,7 @@ class SoundChange:
         return self.__generate_normal_output(input_match_string, catagories)
 
     # applies the SC to a word
-    def __apply_single_SC(self, word: str, valid_matches: list[__SCMatch], catagories: Catagories) -> str:
+    def __apply_single_SC(self, word: str, valid_matches: list[Match], catagories: Catagories) -> str:
 
         match_positions = [[
                 i for i in range(this_match.start(), this_match.end())
