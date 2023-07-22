@@ -56,9 +56,14 @@ def main():
         ),
         SCTest(
             "a/aa/_",
-            ["a"],
-            ["aa"]
-        )
+            ["a", "ada"],
+            ["aa", "aadaa"]
+        ),
+        SCTest(
+            "ab/\\\\/_",
+            ["ab"],
+            ["ba"],
+        ),
     ], catagories, True)
 
 

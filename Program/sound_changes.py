@@ -389,7 +389,9 @@ class SoundChange:
 
     # generate_metathesis_output
     def __generate_metathesis_output(self, input_match_string: str, catagories: Catagories) -> str:
-        raise NotImplementedError("metathesis is not implemented")
+        start = input_match_string[0]
+        end   = input_match_string[1]
+        return end + start
 
     # generates an output based on notation
     def __generate_output(self, input_match_string: str, catagories: Catagories) -> str:
@@ -458,16 +460,26 @@ class SoundChange:
 
 # converts notation to a SoundChange object
 def notation_to_SC(catagories: Catagories, notation: str) -> SoundChange:
-    sections = notation.split("/")
+    is_metathesis = False
+    if search("..+/\\\\\\\\/", notation):
+        sections = ''.join([c for c in list(notation) if c != "\\"]).split("/")
+        is_metathesis = True
+    else:
+        sections = notation.split("/")
+
     if len(sections) < 3:
         raise ValueError(
             "notation must be in the form <input>/<output>/<context>[/<nontext_1>/<nontext_2>/.../<nontext_N>]"
         )
 
-    if len(sections) == 3:
-        return SoundChange(catagories, sections[0], sections[1], sections[2], [], False)
-
-    return SoundChange(catagories, sections[0], sections[1], sections[2], sections[3:], False)
+    return SoundChange(
+        catagories,
+        sections[0],
+        [] if is_metathesis else sections[1],
+        sections[2],
+        [] if len(sections) == 3 else sections[3:],
+        is_metathesis
+    )
 
 
 # holds and applies sound changes
