@@ -1,2 +1,3 @@
 # python-sound-change-applier
-a python program which applies sound changes to a set of words based on SCA², written in python
+
+Python Sound Change Applier (PSCA) is a library for applying sound changes to words similar to Zompist's [SCA²](http://www.zompist.com/sca2.html) but for use in your python scripts.
