@@ -8,7 +8,7 @@ from catagories import Catagories, Catagory
 
 # sound change object used both for detecting contexts where a sound change can occur, and applying sound changes
 class SoundChange:
-    def __init__(self, catagories: Catagory, input_val: str, output_val: str, context: str, nontexts: list[str], metathesize: bool) -> None:
+    def __init__(self, catagories: Catagories, input_val: str, output_val: str, context: str, nontexts: list[str], metathesize: bool) -> None:
         self.input_val = input_val
         self.output_val= output_val
         self.context   = context
@@ -459,18 +459,17 @@ class SoundChange:
 
 
 # converts notation to a SoundChange object
-def notation_to_SC(catagories: Catagories, notation: str) -> SoundChange:
+def notation_to_SC(notation: str, catagories: Catagories) -> SoundChange:
     is_metathesis = False
-    if search("..+/\\\\\\\\/", notation):
+    if search("..+/\\\\\\\\/", notation): # suprisingly if this is inputted it looks like "ab/\\/"
         sections = ''.join([c for c in list(notation) if c != "\\"]).split("/")
         is_metathesis = True
     else:
         sections = notation.split("/")
 
-    if len(sections) < 3:
-        raise ValueError(
-            "notation must be in the form <input>/<output>/<context>[/<nontext_1>/<nontext_2>/.../<nontext_N>]"
-        )
+    if len(sections) < 3: raise ValueError(
+        "notation must be in the form <input>/<output>/<context>[/<nontext_1>/<nontext_2>/.../<nontext_N>]"
+    )
 
     return SoundChange(
         catagories,
@@ -481,7 +480,15 @@ def notation_to_SC(catagories: Catagories, notation: str) -> SoundChange:
         is_metathesis
     )
 
-
 # holds and applies sound changes
 class SoundChanges:
-    pass
+    def __init__(self, notations: list[str], catagories: Catagories) -> None:
+        self.notations = notations
+        self.SCs = [notation_to_SC(notation, catagories) for notation in notations]
+
+    def apply_all(self, words: list[str], catagories: Catagories) -> list[str]:
+        for index, word in enumerate(words):
+            for SC in self.SCs:
+                word = SC.apply_to(word, catagories)
+            words[index] = word
+        return words

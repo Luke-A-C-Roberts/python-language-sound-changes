@@ -1,5 +1,5 @@
 from catagories import Catagories
-from test import test_multipleSCs, SCTest
+from test import test_multiple_SCs, SCTest
 
 # holds input words
 class InputWords:
@@ -8,7 +8,7 @@ class InputWords:
 def main():
     catagories = Catagories("V=aiueo\nC=ptkbdghmnŋslr\nX=ptk\nY=bdg")
 
-    test_multipleSCs([
+    test_multiple_SCs([
         SCTest(
             "i/j/[V#]_V/_o",
             ["kaia", "iam", "kaio", "iom"],
