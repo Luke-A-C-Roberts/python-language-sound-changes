@@ -1,0 +1,25 @@
+DONE: fix inserts at the end of the words eg. /j/kt_ applied to akt -> akt at the moment but should be aktj
+
+DONE: add variable length and type input matches to replace
+
+DONE: complex output
+
+DONE: overlapping regex
+
+DONE: Metathesis
+
+Testing
+
+Multicharacter replacement like [{aa}{ah}]/a:/_ where aa -> a: and ah -> a: , [iu]/[{ij}{uw}]/_ where i -> iju
+
+Random replacement o/<iu>/_ where o -> i or o -> u randomly
+
+GUI
+
+WEBSITE
+
+OLD SCA² File imports
+
+new XSC Files
+
+Diacritic Support
