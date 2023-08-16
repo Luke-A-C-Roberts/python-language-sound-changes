@@ -1,3 +1,3 @@
-# python-sound-change-applier
+# SonoMorph
 
-Python Sound Change Applier (PSCA) is a library for applying sound changes to words similar to Zompist's [SCA²](http://www.zompist.com/sca2.html) but for use in your python scripts.
+is a library for applying sound changes to words similar to Zompist's [SCA²](http://www.zompist.com/sca2.html) but for use in your python scripts.
